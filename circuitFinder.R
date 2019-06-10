@@ -109,6 +109,21 @@ makePngs <- function(dataset, circuitType, circuits, fullEdgeList) {
   }
 }
 
+checkCircuitRemovalCondition <- function(circuit_node_names, circuit, graph) {
+  circuit_nodes <- unlist(strsplit(circuit_node_names, split = "; "))
+  circuit_Subgraph <- induced_subgraph(graph, circuit_nodes, impl = "create_from_scratch")
+  circuit_Subgraph_nodes <- vertex_attr(circuit_Subgraph, "name")
+
+  permutation_order <- unlist(lapply(circuit_Subgraph_nodes, function(circuit_Subgraph_node) grep(paste("^", circuit_Subgraph_node, "$", sep = ""), circuit_nodes)))
+  circuit_Subgraph <- permute(circuit_Subgraph, permutation_order)
+  
+  found_adjacency <- as.matrix(as_adjacency_matrix(circuit_Subgraph, names = T))
+  return(all(found_adjacency == circuit))
+}
+
+# circuit <- circuit_FFF
+# similarity_nodes <- c(4, 5, 2, 3)
+# name <- "FFF"
 findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList) {
   # returns number of circuits found and writes circuits to files
   nodes <- unique(c(fullEdgeList$V1, fullEdgeList$V2))
@@ -123,15 +138,22 @@ findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList)
   duplicationTable <- sapply(circuits$Nodes, function(x) arrangeLine(x))
   circuits <- circuits[!duplicated(duplicationTable), ]
   
+  if(length(circuits) != 0) {
+    exactCircuits <- foreach(i = 1:length(circuits), .combine = c) %do% {checkCircuitRemovalCondition(circuits[i], circuit, graph)}
+    circuits <- circuits[exactCircuits]
+  }
+  
   circuits <- as.data.frame(circuits, stringsAsFactors = F)
   colnames(circuits) <- "Nodes"
   
   # calculate measure of similarity in between Xs and Ys
   circuits <- getSimilarity(circuits, similarity_nodes, edgeList)
   
-  write(unlist(unite(circuits, Output, sep = "\t")),
-        paste("circuits1/", dataset, "_", name, ".txt", sep = ""))
-  
+  if(length(circuits) != 0) {
+    write(unlist(unite(circuits, Output, sep = "\t")),
+          paste("circuits1/", dataset, "_", name, ".txt", sep = ""))
+  }
+    
   makePngs(dataset, name, circuits$Nodes, fullEdgeList)
   return(nrow(circuits))
 }
@@ -145,6 +167,7 @@ networkDirectory <- "/home/ian/Dropbox/groupoid_finding_codes/naturePhysRuns/aut
 files <- list.files(networkDirectory, full.names = T)
 
 fileNames <- 
+  #"regulations_bacilus"
   "Regulations_in_ATRM
 B_subtilis_quantitative_transcription_network
 regulations_bacilus
@@ -224,258 +247,259 @@ dev.off()
 
 # here we do pdfs
 
-circuitDirectories <- list.dirs(paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/"), full.names = T)
-circuitDirectories <- circuitDirectories[-1]
-circuitDirectories <- as.data.frame(circuitDirectories, stringsAsFactors = F)
+# circuitDirectories <- list.dirs(paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/"), full.names = T)
+# circuitDirectories <- circuitDirectories[-1]
+# circuitDirectories <- as.data.frame(circuitDirectories, stringsAsFactors = F)
+# 
+# circuitDirectories$Dataset <- gsub(".*//([A-z]*)_[[:alpha:]]*$", "\\1", circuitDirectories$circuitDirectories)
+# 
+# foreach(dataset = unique(circuitDirectories$Dataset), .combine = c) %do% {
+#   directoriesToCheck <- circuitDirectories %>%
+#     filter(Dataset == dataset)
+#   
+#   pngFileNames <- foreach(i = 1:nrow(directoriesToCheck), .combine = c) %do% {
+#     paste(directoriesToCheck$circuitDirectories[i], list.files(directoriesToCheck$circuitDirectories[i]), sep = "/")
+#   }
+#   
+#   pngFileNames
+# }
+# 
+# setwd("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/")
+# texFileName <- "structures.tex"
+# 
+# write("\\documentclass[preprint,aps,preprintnumbers,amsmath,amssymb]{revtex4}
+# 
+# \\usepackage[]{graphicx}
+# 
+# \\begin{document}", texFileName)
+# 
+# for(i in 1:length(pngFileNames)) {
+#   write(paste("\\clearpage ",
+#               gsub(".*_([[:alpha:]]*)/[^/]*$", "\\1", pngFileNames[i]),
+#               " \\\\", sep = ""),
+#         file = texFileName, append = T)
+#   write(paste("\\includegraphics[width=\\textwidth, height=100in, keepaspectratio]{",
+#               gsub(".*/(circuits)", "\\1", pngFileNames[i]),
+#               "} \\\\", sep = ""),
+#         file = texFileName, append = T)
+# }
+# 
+# write("\\end{document}", texFileName, append = T)
+# 
+# system(paste("pdflatex", texFileName))
+# 
+# system(paste("mv ",
+#              gsub(".tex", ".pdf", texFileName),
+#              " ",
+#              gsub("[^/]*.tex", paste(dataset, ".pdf", sep = ""), texFileName),
+#              sep = ""))
 
-circuitDirectories$Dataset <- gsub(".*//([A-z]*)_[[:alpha:]]*$", "\\1", circuitDirectories$circuitDirectories)
+# this is old code that finds all types of circuits
 
-foreach(dataset = unique(circuitDirectories$Dataset), .combine = c) %do% {
-  directoriesToCheck <- circuitDirectories %>%
-    filter(Dataset == dataset)
-  
-  pngFileNames <- foreach(i = 1:nrow(directoriesToCheck), .combine = c) %do% {
-    paste(directoriesToCheck$circuitDirectories[i], list.files(directoriesToCheck$circuitDirectories[i]), sep = "/")
-  }
-  
-  pngFileNames
-}
-
-setwd("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/")
-texFileName <- "structures.tex"
-
-write("\\documentclass[preprint,aps,preprintnumbers,amsmath,amssymb]{revtex4}
-
-\\usepackage[]{graphicx}
-
-\\begin{document}", texFileName)
-
-for(i in 1:length(pngFileNames)) {
-  write(paste("\\clearpage ",
-              gsub(".*_([[:alpha:]]*)/[^/]*$", "\\1", pngFileNames[i]),
-              " \\\\", sep = ""),
-        file = texFileName, append = T)
-  write(paste("\\includegraphics[width=\\textwidth, height=100in, keepaspectratio]{",
-              gsub(".*/(circuits)", "\\1", pngFileNames[i]),
-              "} \\\\", sep = ""),
-        file = texFileName, append = T)
-}
-
-write("\\end{document}", texFileName, append = T)
-
-system(paste("pdflatex", texFileName))
-
-system(paste("mv ",
-             gsub(".tex", ".pdf", texFileName),
-             " ",
-             gsub("[^/]*.tex", paste(dataset, ".pdf", sep = ""), texFileName),
-             sep = ""))
-
-
-summary <- foreach(idx = idxs, .combine = rbind, .errorhandling = "remove") %do% {
-  library(tidyr)
-  library(dplyr)
-  library(stringr)
-  library(foreach)
-  library(igraph)
-  library(gridExtra)
-  print(idx)
-  fullEdgeList <- read.table(files[idx], stringsAsFactors = F)
-  nodes <- unique(c(fullEdgeList$V1, fullEdgeList$V2))
-  edgeList <- fullEdgeList %>%
-    filter(V1 != V2)
-  edgeList <- edgeList[!duplicated(edgeList[, c(1, 2)]), ]
-  graph <- graph.data.frame(edgeList)
-  
-  # AR section
-  backNForth <- matrix(
-    data = c(0, 1,
-             1, 0), ncol = 2)
-  
-  backNForth <- getCircuits(backNForth, graph, "backNForth")
-  # remove duplicated lines
-  backNForth$Nodes <- sapply(backNForth$Nodes, function(x) arrangeLine(x))
-  backNForth <- backNForth[!duplicated(backNForth$Nodes), ]
-  
-  dataset <- gsub(".*/", "", files[idx])
-  dataset <- gsub("\\.txt", "", dataset)
-  print(paste("Running", dataset))
-  prefix <- paste("/home/ian/Dropbox/groupoid_finding_codes/naturePhysRuns/automaticRunData/output", dataset, sep = "/")
-  classifiedStructures <- getBlocks(prefix)
-  
-  possibleARb <- nrow(backNForth)
-  possibleARbList <- backNForth$Nodes
-  
-  possibleARa <- 0
-  possibleARaList <- NULL
-  for(i in 1:nrow(backNForth)) {
-    possibleAR <- unlist(strsplit(backNForth$Nodes[i], split = "; "))
-    if(nrow(edgeList[edgeList$V2 == possibleAR[1], ]) == 2) {
-      if(nrow(edgeList[edgeList$V2 == possibleAR[2], ]) == 2) {
-        possibleARa <- possibleARa + 1
-        possibleARaList <- c(possibleARaList, T)
-        next
-      }
-    }
-    possibleARaList <- c(possibleARaList, F)
-  }
-  possibleARaList <- backNForth$Nodes[possibleARaList]
-  
-  possibleARc <- sum(classifiedStructures$nl == "Fibonacci")
-  possibleARcList <- gsub(",", ";", classifiedStructures$Node[classifiedStructures$nl == "Fibonacci"])
-  
-  # write to output files
-  # write(possibleARaList, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_ARa.txt", sep = ""))
-  # write(possibleARbList, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_ARb.txt", sep = ""))
-  # write(possibleARcList, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_ARc.txt", sep = ""))
-  
-  # FFF without fiber section
-  FFFnoFiberA <- 0
-  FFFnoFiberAlist <- NULL
-  FFFnoFiberB <- 0
-  FFFnoFiberBlist <- NULL
-  for(i in 1:length(possibleARaList)) {
-    if(length(possibleARaList) == 0) {break}
-    possibleY <- unlist(strsplit(possibleARaList[i], split = "; "))
-    possibleYprime <- possibleY[1]
-    possibleY <- possibleY[2]
-    possibleX      <- edgeList$V1[edgeList$V2 == possibleY      & edgeList$V1 != possibleYprime]
-    possibleXprime <- edgeList$V1[edgeList$V2 == possibleYprime & edgeList$V1 != possibleY]
-    if(possibleX != possibleXprime) {
-      FFFnoFiberA <- FFFnoFiberA + 1
-      FFFnoFiberAlist <- c(FFFnoFiberAlist, paste(possibleX, possibleXprime, possibleY, possibleYprime, sep = "; "))
-      
-      possibleXclock      <- edgeList$V1[edgeList$V2 == possibleX]
-      possibleXprimeClock <- edgeList$V1[edgeList$V2 == possibleXprime]
-      
-      possibleClock <- intersect(possibleXclock, possibleXprimeClock)
-      if(length(possibleClock) != 0) {
-        FFFnoFiberB <- FFFnoFiberB + length(possibleClock)
-        newEntries <- foreach(clock = possibleClock) %do% {
-          paste(clock, possibleX, possibleXprime, possibleY, possibleYprime, sep = "; ")
-        }
-        FFFnoFiberBlist <- c(FFFnoFiberBlist, unlist(newEntries))
-      }
-    }
-  }
-  
-  SRnoClock <- matrix(
-    data = c(0, 0, 0, 0,
-             0, 0, 0, 0,
-             1, 0, 0, 1,
-             0, 1, 1, 0), ncol = 4)
-  SRnoClock <- getCircuits(SRnoClock, graph, "NoClock")
-  # remove circuits, which are rearrangement of one another
-  duplicationTable <- sapply(SRnoClock$Nodes, function(x) arrangeLine(x))
-  SRnoClock <- SRnoClock[!duplicated(duplicationTable), ]
-  
-  # calculate measure of similarity in between Xs and Ys
-  SRnoClock <- getSimilarity(SRnoClock, c(3, 4, 1, 2), edgeList)
-  
-  SRclock <- matrix(
-    data = c(0, 0, 0, 0, 0,
-             1, 0, 0, 0, 0,
-             1, 0, 0, 0, 0,
-             0, 1, 0, 0, 1,
-             0, 0, 1, 1, 0), ncol = 5)
-  SRclock <- getCircuits(SRclock, graph, "Clock")
-  # remove circuits, which are rearrangement of one another
-  duplicationTable <- sapply(SRclock$Nodes, function(x) arrangeLine(x))
-  SRclock <- SRclock[!duplicated(duplicationTable), ]
-  
-  # calculate measure of similarity in between Xs and Ys
-  SRclock <- getSimilarity(SRclock, c(4, 5, 2, 3), edgeList)
-  
-  # oldList <- JKclock
-  # newList <- oldList[0, ]
-  # nodesInBlocks <- unique(unlist(strsplit(oldList$Nodes, split = "; ")))
-  # nodesInBlocks
-  # pointer <- 1
-  # while(pointer <= length(nodesInBlocks)) {
-  #   # take node on pointer in a list of available nodes
-  #   blockIds <- grep(paste("(^| )", nodesInBlocks[pointer], "($|;)", sep = ""), SRclock$Nodes)
-  #   blockIds <- sample(blockIds, replace = F)
-  #   
-  #   # for loop in blockIds until find block, all nodes of which are available
-  #   increasePointer <- T
-  #   for(blockId in blockIds) {
-  #     block <- unlist(strsplit(oldList$Nodes[blockId], split = "; "))
-  #     
-  #     # if all nodes from this block are still in the list
-  #     #   add block with this id to new list
-  #     #   remove all nodes from this block from list of available nodes
-  #     #   break cycle
-  #     if(all(block %in% nodesInBlocks)) {
-  #       increasePointer <- F
-  #       
-  #       newList <- rbind(newList, oldList[blockId, ])
-  #       oldList <- oldList[c(-blockIds), ]
-  #       
-  #       nodesInBlocks <- nodesInBlocks[!nodesInBlocks %in% block]
-  #       pointer <- 1
-  #       break
-  #     }
-  #   }
-  #   if(increasePointer)
-  #     pointer <- pointer + 1
-  # }
-  
-  # write to output files
-  # write(FFFnoFiberAlist, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_FFFa.txt", sep = ""))
-  # write(FFFnoFiberBlist, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_FFFb.txt", sep = ""))
-  # write(unlist(unite(SRclock[, c("Nodes", "SimilarityY", "SimilarityX")], Output, sep = "\t")),
-  #       paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_FFFc.txt", sep = ""))
-  # write(unlist(unite(SRclock[, c("Nodes", "SimilarityY", "SimilarityX")], Output, sep = "\t")),
-  #       paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_FFFd.txt", sep = ""))
-  
-  # JK section
-  JKnoClock <- matrix(
-    data = c(0, 0, 0, 1,
-             0, 0, 1, 0,
-             1, 0, 0, 1,
-             0, 1, 1, 0), ncol = 4)
-  JKnoClock <- getCircuits(JKnoClock, graph, "NoClock")
-  # remove circuits, which are rearrangement of one another
-  duplicationTable <- sapply(JKnoClock$Nodes, function(x) arrangeLine(x))
-  JKnoClock <- JKnoClock[!duplicated(duplicationTable), ]
-  
-  # calculate measure of similarity in between Xs and Ys
-  JKnoClock <- getSimilarity(JKnoClock, c(3, 4, 1, 2), edgeList)
-  
-  JKclock <- matrix(
-    data = c(0, 0, 0, 0, 0,
-             1, 0, 0, 0, 1,
-             1, 0, 0, 1, 0,
-             0, 1, 0, 0, 1,
-             0, 0, 1, 1, 0), ncol = 5)
-  JKclock <- getCircuits(JKclock, graph, "Clock")
-  # remove circuits, which are rearrangement of one another
-  duplicationTable <- sapply(JKclock$Nodes, function(x) arrangeLine(x))
-  JKclock <- JKclock[!duplicated(duplicationTable), ]
-  
-  # calculate measure of similarity in between Xs and Ys
-  JKclock <- getSimilarity(JKclock, c(4, 5, 2, 3), edgeList)
-  
-  # write to output files
-  # write(unlist(unite(JKclock[, c("Nodes", "SimilarityY", "SimilarityX")], Output, sep = "\t")),
-  #       paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_JKa.txt", sep = ""))
-  # write(unlist(unite(JKnoClock[, c("Nodes", "SimilarityY", "SimilarityX")], Output, sep = "\t")),
-  #       paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_JKb.txt", sep = ""))
-  
-  # makePngs(dataset, "ARa", possibleARaList)
-  # makePngs(dataset, "ARb", possibleARbList)
-  # makePngs(dataset, "ARc", possibleARcList)
-  # 
-  # makePngs(dataset, "FFFa", FFFnoFiberAlist)
-  # makePngs(dataset, "FFFb", FFFnoFiberBlist)
-  # makePngs(dataset, "FFFc", SRclock$Nodes)
-  # makePngs(dataset, "FFFd", SRnoClock$Nodes)
-  # 
-  # makePngs(dataset, "JKa", JKclock$Nodes)
-  # makePngs(dataset, "JKb", JKnoClock$Nodes)
-  c(dataset, possibleARa, possibleARb, possibleARc, FFFnoFiberA, FFFnoFiberB, nrow(SRclock), nrow(SRnoClock), nrow(JKclock), nrow(JKnoClock))
-}
-
+# summary <- foreach(idx = idxs, .combine = rbind, .errorhandling = "remove") %do% {
+#   library(tidyr)
+#   library(dplyr)
+#   library(stringr)
+#   library(foreach)
+#   library(igraph)
+#   library(gridExtra)
+#   print(idx)
+#   fullEdgeList <- read.table(files[idx], stringsAsFactors = F)
+#   nodes <- unique(c(fullEdgeList$V1, fullEdgeList$V2))
+#   edgeList <- fullEdgeList %>%
+#     filter(V1 != V2)
+#   edgeList <- edgeList[!duplicated(edgeList[, c(1, 2)]), ]
+#   graph <- graph.data.frame(edgeList)
+#   
+#   # AR section
+#   backNForth <- matrix(
+#     data = c(0, 1,
+#              1, 0), ncol = 2)
+#   
+#   backNForth <- getCircuits(backNForth, graph, "backNForth")
+#   # remove duplicated lines
+#   backNForth$Nodes <- sapply(backNForth$Nodes, function(x) arrangeLine(x))
+#   backNForth <- backNForth[!duplicated(backNForth$Nodes), ]
+#   
+#   dataset <- gsub(".*/", "", files[idx])
+#   dataset <- gsub("\\.txt", "", dataset)
+#   print(paste("Running", dataset))
+#   prefix <- paste("/home/ian/Dropbox/groupoid_finding_codes/naturePhysRuns/automaticRunData/output", dataset, sep = "/")
+#   classifiedStructures <- getBlocks(prefix)
+#   
+#   possibleARb <- nrow(backNForth)
+#   possibleARbList <- backNForth$Nodes
+#   
+#   possibleARa <- 0
+#   possibleARaList <- NULL
+#   for(i in 1:nrow(backNForth)) {
+#     possibleAR <- unlist(strsplit(backNForth$Nodes[i], split = "; "))
+#     if(nrow(edgeList[edgeList$V2 == possibleAR[1], ]) == 2) {
+#       if(nrow(edgeList[edgeList$V2 == possibleAR[2], ]) == 2) {
+#         possibleARa <- possibleARa + 1
+#         possibleARaList <- c(possibleARaList, T)
+#         next
+#       }
+#     }
+#     possibleARaList <- c(possibleARaList, F)
+#   }
+#   possibleARaList <- backNForth$Nodes[possibleARaList]
+#   
+#   possibleARc <- sum(classifiedStructures$nl == "Fibonacci")
+#   possibleARcList <- gsub(",", ";", classifiedStructures$Node[classifiedStructures$nl == "Fibonacci"])
+#   
+#   # write to output files
+#   # write(possibleARaList, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_ARa.txt", sep = ""))
+#   # write(possibleARbList, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_ARb.txt", sep = ""))
+#   # write(possibleARcList, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_ARc.txt", sep = ""))
+#   
+#   # FFF without fiber section
+#   FFFnoFiberA <- 0
+#   FFFnoFiberAlist <- NULL
+#   FFFnoFiberB <- 0
+#   FFFnoFiberBlist <- NULL
+#   for(i in 1:length(possibleARaList)) {
+#     if(length(possibleARaList) == 0) {break}
+#     possibleY <- unlist(strsplit(possibleARaList[i], split = "; "))
+#     possibleYprime <- possibleY[1]
+#     possibleY <- possibleY[2]
+#     possibleX      <- edgeList$V1[edgeList$V2 == possibleY      & edgeList$V1 != possibleYprime]
+#     possibleXprime <- edgeList$V1[edgeList$V2 == possibleYprime & edgeList$V1 != possibleY]
+#     if(possibleX != possibleXprime) {
+#       FFFnoFiberA <- FFFnoFiberA + 1
+#       FFFnoFiberAlist <- c(FFFnoFiberAlist, paste(possibleX, possibleXprime, possibleY, possibleYprime, sep = "; "))
+#       
+#       possibleXclock      <- edgeList$V1[edgeList$V2 == possibleX]
+#       possibleXprimeClock <- edgeList$V1[edgeList$V2 == possibleXprime]
+#       
+#       possibleClock <- intersect(possibleXclock, possibleXprimeClock)
+#       if(length(possibleClock) != 0) {
+#         FFFnoFiberB <- FFFnoFiberB + length(possibleClock)
+#         newEntries <- foreach(clock = possibleClock) %do% {
+#           paste(clock, possibleX, possibleXprime, possibleY, possibleYprime, sep = "; ")
+#         }
+#         FFFnoFiberBlist <- c(FFFnoFiberBlist, unlist(newEntries))
+#       }
+#     }
+#   }
+#   
+#   SRnoClock <- matrix(
+#     data = c(0, 0, 0, 0,
+#              0, 0, 0, 0,
+#              1, 0, 0, 1,
+#              0, 1, 1, 0), ncol = 4)
+#   SRnoClock <- getCircuits(SRnoClock, graph, "NoClock")
+#   # remove circuits, which are rearrangement of one another
+#   duplicationTable <- sapply(SRnoClock$Nodes, function(x) arrangeLine(x))
+#   SRnoClock <- SRnoClock[!duplicated(duplicationTable), ]
+#   
+#   # calculate measure of similarity in between Xs and Ys
+#   SRnoClock <- getSimilarity(SRnoClock, c(3, 4, 1, 2), edgeList)
+#   
+#   SRclock <- matrix(
+#     data = c(0, 0, 0, 0, 0,
+#              1, 0, 0, 0, 0,
+#              1, 0, 0, 0, 0,
+#              0, 1, 0, 0, 1,
+#              0, 0, 1, 1, 0), ncol = 5)
+#   SRclock <- getCircuits(SRclock, graph, "Clock")
+#   # remove circuits, which are rearrangement of one another
+#   duplicationTable <- sapply(SRclock$Nodes, function(x) arrangeLine(x))
+#   SRclock <- SRclock[!duplicated(duplicationTable), ]
+#   
+#   # calculate measure of similarity in between Xs and Ys
+#   SRclock <- getSimilarity(SRclock, c(4, 5, 2, 3), edgeList)
+#   
+#   # oldList <- JKclock
+#   # newList <- oldList[0, ]
+#   # nodesInBlocks <- unique(unlist(strsplit(oldList$Nodes, split = "; ")))
+#   # nodesInBlocks
+#   # pointer <- 1
+#   # while(pointer <= length(nodesInBlocks)) {
+#   #   # take node on pointer in a list of available nodes
+#   #   blockIds <- grep(paste("(^| )", nodesInBlocks[pointer], "($|;)", sep = ""), SRclock$Nodes)
+#   #   blockIds <- sample(blockIds, replace = F)
+#   #   
+#   #   # for loop in blockIds until find block, all nodes of which are available
+#   #   increasePointer <- T
+#   #   for(blockId in blockIds) {
+#   #     block <- unlist(strsplit(oldList$Nodes[blockId], split = "; "))
+#   #     
+#   #     # if all nodes from this block are still in the list
+#   #     #   add block with this id to new list
+#   #     #   remove all nodes from this block from list of available nodes
+#   #     #   break cycle
+#   #     if(all(block %in% nodesInBlocks)) {
+#   #       increasePointer <- F
+#   #       
+#   #       newList <- rbind(newList, oldList[blockId, ])
+#   #       oldList <- oldList[c(-blockIds), ]
+#   #       
+#   #       nodesInBlocks <- nodesInBlocks[!nodesInBlocks %in% block]
+#   #       pointer <- 1
+#   #       break
+#   #     }
+#   #   }
+#   #   if(increasePointer)
+#   #     pointer <- pointer + 1
+#   # }
+#   
+#   # write to output files
+#   # write(FFFnoFiberAlist, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_FFFa.txt", sep = ""))
+#   # write(FFFnoFiberBlist, paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_FFFb.txt", sep = ""))
+#   # write(unlist(unite(SRclock[, c("Nodes", "SimilarityY", "SimilarityX")], Output, sep = "\t")),
+#   #       paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_FFFc.txt", sep = ""))
+#   # write(unlist(unite(SRclock[, c("Nodes", "SimilarityY", "SimilarityX")], Output, sep = "\t")),
+#   #       paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_FFFd.txt", sep = ""))
+#   
+#   # JK section
+#   JKnoClock <- matrix(
+#     data = c(0, 0, 0, 1,
+#              0, 0, 1, 0,
+#              1, 0, 0, 1,
+#              0, 1, 1, 0), ncol = 4)
+#   JKnoClock <- getCircuits(JKnoClock, graph, "NoClock")
+#   # remove circuits, which are rearrangement of one another
+#   duplicationTable <- sapply(JKnoClock$Nodes, function(x) arrangeLine(x))
+#   JKnoClock <- JKnoClock[!duplicated(duplicationTable), ]
+#   
+#   # calculate measure of similarity in between Xs and Ys
+#   JKnoClock <- getSimilarity(JKnoClock, c(3, 4, 1, 2), edgeList)
+#   
+#   JKclock <- matrix(
+#     data = c(0, 0, 0, 0, 0,
+#              1, 0, 0, 0, 1,
+#              1, 0, 0, 1, 0,
+#              0, 1, 0, 0, 1,
+#              0, 0, 1, 1, 0), ncol = 5)
+#   JKclock <- getCircuits(JKclock, graph, "Clock")
+#   # remove circuits, which are rearrangement of one another
+#   duplicationTable <- sapply(JKclock$Nodes, function(x) arrangeLine(x))
+#   JKclock <- JKclock[!duplicated(duplicationTable), ]
+#   
+#   # calculate measure of similarity in between Xs and Ys
+#   JKclock <- getSimilarity(JKclock, c(4, 5, 2, 3), edgeList)
+#   
+#   # write to output files
+#   # write(unlist(unite(JKclock[, c("Nodes", "SimilarityY", "SimilarityX")], Output, sep = "\t")),
+#   #       paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_JKa.txt", sep = ""))
+#   # write(unlist(unite(JKnoClock[, c("Nodes", "SimilarityY", "SimilarityX")], Output, sep = "\t")),
+#   #       paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/", dataset, "_JKb.txt", sep = ""))
+#   
+#   # makePngs(dataset, "ARa", possibleARaList)
+#   # makePngs(dataset, "ARb", possibleARbList)
+#   # makePngs(dataset, "ARc", possibleARcList)
+#   # 
+#   # makePngs(dataset, "FFFa", FFFnoFiberAlist)
+#   # makePngs(dataset, "FFFb", FFFnoFiberBlist)
+#   # makePngs(dataset, "FFFc", SRclock$Nodes)
+#   # makePngs(dataset, "FFFd", SRnoClock$Nodes)
+#   # 
+#   # makePngs(dataset, "JKa", JKclock$Nodes)
+#   # makePngs(dataset, "JKb", JKnoClock$Nodes)
+#   c(dataset, possibleARa, possibleARb, possibleARc, FFFnoFiberA, FFFnoFiberB, nrow(SRclock), nrow(SRnoClock), nrow(JKclock), nrow(JKnoClock))
+# }
+# 
 # 
 # # here we clean 4 networks
 # # 1
