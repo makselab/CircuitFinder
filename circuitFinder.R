@@ -72,7 +72,7 @@ getSimilarity <- function(data, nodeIds, edgeList) {
 
 makePngs <- function(dataset, circuitType, circuits, fullEdgeList) {
   if(length(circuits) == 0) {return()}
-  system(paste("mkdir ", "circuits1/", dataset, "_", circuitType, sep = ""))
+  system(paste("mkdir ", "circuits/", dataset, "_", circuitType, sep = ""))
   if(ncol(fullEdgeList) == 3) {
     fullEdgeList$color <- group_indices(fullEdgeList, V3)
     numberOfColors <- max(fullEdgeList$color)
@@ -89,16 +89,16 @@ makePngs <- function(dataset, circuitType, circuits, fullEdgeList) {
     circuitNodes <- unlist(strsplit(circuits[i], split = "; "))
     circuitEdges <- fullEdgeList[fullEdgeList$V1 %in% circuitNodes & fullEdgeList$V2 %in% circuitNodes, ]
     
-    network <- graph_from_data_frame(d = circuitEdges, vertices = circuitNodes, directed = T)
+    network <- graph_from_data_frame(d = circuitEdges, vertices = toupper(circuitNodes), directed = T)
     V(network)$label.size <- 30
     
-    png(filename = paste("circuits1/", dataset, "_", circuitType, "/", i, ".png", sep = ""),
-        width = 1280, height = 720)
+    png(filename = paste("circuits/", dataset, "_", circuitType, "/", i, ".png", sep = ""),
+        width = 640, height = 360)
     oldMargins<-par("mar")
     par(mar = c(0, 0, 0, 0))
     if(ncol(fullEdgeList) == 4) {
       plot(network, edge.color = circuitEdges$color, vertex.label.cex = 2.5)
-      legend(x = 1.5, y = 1.1, legend = legendColors,
+      legend(x = 1.2, y = 1.1, legend = legendColors,
              col = edgeColors, lty = 1, lwd = 3, cex = 1,
              title = circuitType, text.font = 4, bg = 'white')
     } else {
@@ -110,6 +110,7 @@ makePngs <- function(dataset, circuitType, circuits, fullEdgeList) {
 }
 
 checkCircuitRemovalCondition <- function(circuit_node_names, circuit, graph) {
+  # here we check if adjacency matrix of subgraph of reduced (without self-loops and multilinks) is equal to adjacency matrix searched for
   circuit_nodes <- unlist(strsplit(circuit_node_names, split = "; "))
   circuit_Subgraph <- induced_subgraph(graph, circuit_nodes, impl = "create_from_scratch")
   circuit_Subgraph_nodes <- vertex_attr(circuit_Subgraph, "name")
@@ -121,10 +122,19 @@ checkCircuitRemovalCondition <- function(circuit_node_names, circuit, graph) {
   return(all(found_adjacency == circuit))
 }
 
-# circuit <- circuit_FFF
-# similarity_nodes <- c(4, 5, 2, 3)
+# circuit <- circuit_AR
+# similarity_nodes <- c(1, 2)
 # name <- "FFF"
-findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList) {
+# regulators <- classifiedStructures$Regulators[classifiedStructures$Class == "Unsynchronized Star Fiber"]
+# i <- 1
+# for(i in 1:nrow(circuits)) {
+#   circuits_Nodes <- unlist(strsplit(circuits$Nodes[i], split = "; "))
+#   circuits_Nodes <- circuits_Nodes
+#   circuits$Regulating[i] <- all(circuits_Nodes %in% regulators)
+#   circuits$Pair_Nodes[i] <- paste(sort(circuits_Nodes), collapse = "; ")
+# }
+# grep("BRCA1; ESR1", circuits$Nodes)
+findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList, pvalues) {
   # returns number of circuits found and writes circuits to files
   nodes <- unique(c(fullEdgeList$V1, fullEdgeList$V2))
   edgeList <- fullEdgeList %>%
@@ -138,10 +148,10 @@ findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList)
   duplicationTable <- sapply(circuits$Nodes, function(x) arrangeLine(x))
   circuits <- circuits[!duplicated(duplicationTable), ]
   
-  if(length(circuits) != 0) {
-    exactCircuits <- foreach(i = 1:length(circuits), .combine = c) %do% {checkCircuitRemovalCondition(circuits[i], circuit, graph)}
-    circuits <- circuits[exactCircuits]
-  }
+  # if(length(circuits) != 0) {
+  #   exactCircuits <- foreach(i = 1:length(circuits), .combine = c) %do% {checkCircuitRemovalCondition(circuits[i], circuit, graph)}
+  #   circuits <- circuits[exactCircuits]
+  # }
   
   circuits <- as.data.frame(circuits, stringsAsFactors = F)
   colnames(circuits) <- "Nodes"
@@ -149,12 +159,14 @@ findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList)
   # calculate measure of similarity in between Xs and Ys
   circuits <- getSimilarity(circuits, similarity_nodes, edgeList)
   
-  if(length(circuits) != 0) {
+  if(length(circuits) != 0 & !pvalues) {
     write(unlist(unite(circuits, Output, sep = "\t")),
-          paste("circuits1/", dataset, "_", name, ".txt", sep = ""))
+          paste("circuits/", dataset, "_", name, ".txt", sep = ""))
   }
-    
-  makePngs(dataset, name, circuits$Nodes, fullEdgeList)
+  
+  if(!pvalues) {
+    makePngs(dataset, name, circuits$Nodes, fullEdgeList)
+  }
   return(nrow(circuits))
 }
 
@@ -167,7 +179,14 @@ networkDirectory <- "/home/ian/Dropbox/groupoid_finding_codes/naturePhysRuns/aut
 files <- list.files(networkDirectory, full.names = T)
 
 fileNames <- 
-  #"regulations_bacilus"
+  #"model"
+  "regulations_bacilus_cleaned
+Ecoli
+Micobacterium_tuberculosis
+salmonella_Typhi_SL1344_RN
+YTRP_TF_gene_regulatory
+trrust_rawdata.mouse
+human_network_tf_gene_weighted"
   "Regulations_in_ATRM
 B_subtilis_quantitative_transcription_network
 regulations_bacilus
@@ -189,13 +208,14 @@ idxs <- foreach(i = 1:length(fileNames), .combine = c) %do% {grep(paste("/", fil
 
 workingDirectory <- "~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis"
 setwd(workingDirectory)
+pvalues = F
 
 # loop over all files
 #idx = idxs[1]
 #files
 #idxs = c(3, 4, 7, 8)
-#myCluster <- makeCluster(detectCores() - 2, outfile = "")
-#registerDoParallel(myCluster)
+# myCluster <- makeCluster(detectCores() - 2, outfile = "")
+# registerDoParallel(myCluster)
 summary <- foreach(idx = idxs, .combine = rbind, .errorhandling = "remove") %do% {
   library(tidyr)
   library(dplyr)
@@ -212,7 +232,7 @@ summary <- foreach(idx = idxs, .combine = rbind, .errorhandling = "remove") %do%
   circuit_AR <- matrix(
     data = c(0, 1,
              1, 0), ncol = 2)
-  circuit_count_AR <- findCircuits(circuit_AR, c(1, 2), "AR", dataset, fullEdgeList)
+  circuit_count_AR <- findCircuits(circuit_AR, c(1, 2), "AR", dataset, fullEdgeList, pvalues)
   
   circuit_FFF <- matrix(
     data = c(0, 0, 0, 0, 0,
@@ -220,7 +240,7 @@ summary <- foreach(idx = idxs, .combine = rbind, .errorhandling = "remove") %do%
              1, 0, 0, 0, 0,
              0, 1, 0, 0, 1,
              0, 0, 1, 1, 0), ncol = 5)
-  circuit_count_FFF <- findCircuits(circuit_FFF, c(4, 5, 2, 3), "FFF", dataset, fullEdgeList)
+  circuit_count_FFF <- findCircuits(circuit_FFF, c(4, 5, 2, 3), "FFF", dataset, fullEdgeList, pvalues)
 
   circuit_JK <- matrix(
     data = c(0, 0, 0, 0, 0,
@@ -228,11 +248,11 @@ summary <- foreach(idx = idxs, .combine = rbind, .errorhandling = "remove") %do%
              1, 0, 0, 1, 0,
              0, 1, 0, 0, 1,
              0, 0, 1, 1, 0), ncol = 5)
-  circuit_count_JK <- findCircuits(circuit_JK, c(4, 5, 2, 3), "JK", dataset, fullEdgeList)
+  circuit_count_JK <- findCircuits(circuit_JK, c(4, 5, 2, 3), "JK", dataset, fullEdgeList, pvalues)
   
   c(dataset, circuit_count_AR, circuit_count_FFF, circuit_count_JK)
 }
-#stopCluster(myCluster)
+# stopCluster(myCluster)
 
 summary <- as.data.frame(summary, stringsAsFactors = F)
 colnames(summary) <- c("Dataset", "AR", "FFF", "JK")
@@ -240,59 +260,101 @@ summary[, -1] <- sapply(summary[, -1], as.numeric)
 
 #write.csv(summary, "pvalueSummary.csv", row.names = F, quote = F)
 
-pdf("output.pdf", height = 11, width = 14)
-grid.table(summary)
-dev.off()
+# pdf("output.pdf", height = 11, width = 14)
+# grid.table(summary)
+# dev.off()
+# 
+# # here we count p values
+# zscoretopvalue <- function(x) {
+#   return(1 - (erf(x) + 1) / 2)
+# }
+# 
+# summary$Dataset <- gsub("(modelSample|[0-9])", "", summary$Dataset)
+# 
+# meanSummary <- summary %>%
+#   group_by(Dataset) %>%
+#   summarise_if(is.numeric, mean)
+# 
+# sdSummary <- summary %>%
+#   group_by(Dataset) %>%
+#   summarise_if(is.numeric, sd)
+# 
+# pvalueSummary <- cbind(meanSummary, sdSummary)
+# pvalueSummary <- pvalueSummary[, -5]
+# colnames(pvalueSummary)[2:7] <- apply(expand.grid(colnames(pvalueSummary)[2:4], c("Mean", "SD")), 1, paste, collapse="")
+
+
 
 
 # here we do pdfs
 
-# circuitDirectories <- list.dirs(paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/"), full.names = T)
-# circuitDirectories <- circuitDirectories[-1]
-# circuitDirectories <- as.data.frame(circuitDirectories, stringsAsFactors = F)
-# 
-# circuitDirectories$Dataset <- gsub(".*//([A-z]*)_[[:alpha:]]*$", "\\1", circuitDirectories$circuitDirectories)
-# 
-# foreach(dataset = unique(circuitDirectories$Dataset), .combine = c) %do% {
-#   directoriesToCheck <- circuitDirectories %>%
-#     filter(Dataset == dataset)
-#   
-#   pngFileNames <- foreach(i = 1:nrow(directoriesToCheck), .combine = c) %do% {
-#     paste(directoriesToCheck$circuitDirectories[i], list.files(directoriesToCheck$circuitDirectories[i]), sep = "/")
-#   }
-#   
-#   pngFileNames
-# }
-# 
-# setwd("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/")
-# texFileName <- "structures.tex"
-# 
-# write("\\documentclass[preprint,aps,preprintnumbers,amsmath,amssymb]{revtex4}
-# 
-# \\usepackage[]{graphicx}
-# 
-# \\begin{document}", texFileName)
-# 
-# for(i in 1:length(pngFileNames)) {
-#   write(paste("\\clearpage ",
-#               gsub(".*_([[:alpha:]]*)/[^/]*$", "\\1", pngFileNames[i]),
-#               " \\\\", sep = ""),
-#         file = texFileName, append = T)
-#   write(paste("\\includegraphics[width=\\textwidth, height=100in, keepaspectratio]{",
-#               gsub(".*/(circuits)", "\\1", pngFileNames[i]),
-#               "} \\\\", sep = ""),
-#         file = texFileName, append = T)
-# }
-# 
-# write("\\end{document}", texFileName, append = T)
-# 
-# system(paste("pdflatex", texFileName))
-# 
-# system(paste("mv ",
-#              gsub(".tex", ".pdf", texFileName),
-#              " ",
-#              gsub("[^/]*.tex", paste(dataset, ".pdf", sep = ""), texFileName),
-#              sep = ""))
+setwd("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/")
+circuitDirectories <- list.dirs(paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/NetworksAnalysis/circuits/"), full.names = T)
+circuitDirectories <- circuitDirectories[-1]
+circuitDirectories <- as.data.frame(circuitDirectories, stringsAsFactors = F)
+
+circuitDirectories$Dataset <- gsub(".*//(.*)_[[:alpha:]]*$", "\\1", circuitDirectories$circuitDirectories)
+circuitDirectories <- circuitDirectories[foreach(i = 1:length(fileNames), .combine = c) %do% {grep(paste(fileNames[i], sep = ""), circuitDirectories$Dataset)}, ]
+
+texFileName <- "structures.tex"
+
+write("\\documentclass[preprint,aps,preprintnumbers,amsmath,amssymb]{revtex4}
+
+\\usepackage[]{graphicx}
+
+\\begin{document}", texFileName)
+
+foreach(dataset = unique(circuitDirectories$Dataset), .combine = c) %do% {
+  directoriesToCheck <- circuitDirectories %>%
+    filter(Dataset == dataset)
+  
+  AR_circuits <- try(read.table(paste("circuits/", dataset, "_AR.txt", sep = ""), sep = "\t", stringsAsFactors = F))
+  FFF_circuits <- try(read.table(paste("circuits/", dataset, "_FFF.txt", sep = ""), sep = "\t", stringsAsFactors = F))
+  JK_circuits <- try(read.table(paste("circuits/", dataset, "_JK.txt", sep = ""), sep = "\t", stringsAsFactors = F))
+  
+  dataset <- gsub("regulations_bacilus_cleaned", "Bacillus\\\\_subtilis", dataset)
+  dataset <- gsub("Micobacterium_tuberculosis", "Micobacterium\\\\_tuberculosis", dataset)
+  dataset <- gsub("salmonella_Typhi_SL1344_RN", "Salmonella\\\\_SL1344", dataset)
+  dataset <- gsub("YTRP_TF_gene_regulatory", "Yeast", dataset)
+  dataset <- gsub("trrust_rawdata.mouse", "Mouse", dataset)
+  dataset <- gsub("human_network_tf_gene_weighted", "Human", dataset)
+  
+  pngFileNames <- foreach(i = 1:nrow(directoriesToCheck), .combine = c) %do% {
+    paste(directoriesToCheck$circuitDirectories[i], list.files(directoriesToCheck$circuitDirectories[i]), sep = "/")
+  }
+  if(length(pngFileNames) > 100)
+    pngFileNames <- pngFileNames[sample(1:length(pngFileNames), 100)]
+    
+  for(i in 1:length(pngFileNames)) {
+    type <- gsub(".*_([[:alpha:]]*)/[0-9]*.png$", "\\1", pngFileNames[i])
+    idx <- as.integer(gsub(".*/([0-9]*).png$", "\\1", pngFileNames[i]))
+    if(type == "AR")
+      nodes <- toupper(AR_circuits$V1[idx])
+    if(type == "FFF")
+      nodes <- toupper(FFF_circuits$V1[idx])
+    if(type == "JK")
+      nodes <- toupper(JK_circuits$V1[idx])
+    nodes <- gsub("_", "\\\\_", nodes)
+    write(paste("\\clearpage ", dataset, " \\\\ ",
+                gsub(".*_([[:alpha:]]*)/[^/]*$", "\\1", pngFileNames[i]),
+                " \\\\ ", nodes, " \\\\", sep = ""),
+          file = texFileName, append = T)
+    write(paste("\\includegraphics[width=\\textwidth, height=100in, keepaspectratio]{",
+                gsub(".*/(circuits)", "\\1", pngFileNames[i]),
+                "} \\\\", sep = ""),
+          file = texFileName, append = T)
+  }
+}
+
+write("\\end{document}", texFileName, append = T)
+
+system(paste("pdflatex", texFileName))
+
+system(paste("mv ",
+             gsub(".tex", ".pdf", texFileName),
+             " SM.pdf",
+#             gsub("[^/]*.tex", paste(dataset, ".pdf", sep = ""), texFileName),
+             sep = ""))
 
 # this is old code that finds all types of circuits
 
@@ -320,7 +382,8 @@ dev.off()
 #   # remove duplicated lines
 #   backNForth$Nodes <- sapply(backNForth$Nodes, function(x) arrangeLine(x))
 #   backNForth <- backNForth[!duplicated(backNForth$Nodes), ]
-#   
+#
+# source("~/Dropbox/groupoid_finding_codes/fibers/R/classifier.R")
 #   dataset <- gsub(".*/", "", files[idx])
 #   dataset <- gsub("\\.txt", "", dataset)
 #   print(paste("Running", dataset))
