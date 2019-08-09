@@ -10,7 +10,7 @@ library(RColorBrewer)
 getCircuits <- function(adjMatrix, graph){
   # run code to find circuits
   adjMatrix <- graph_from_adjacency_matrix(adjMatrix, mode = "directed", weighted = T, diag = T)
-  circuits <- subgraph_isomorphisms(adjMatrix, graph, method = "vf2")
+  circuits <- subgraph_isomorphisms(adjMatrix, graph, method = "lad", induced = T)
   if(length(circuits) == 0)
     return(data.frame(matrix(vector(), 0, 1, dimnames=list(c(), c("Nodes"))), stringsAsFactors=F))
   
@@ -72,7 +72,7 @@ getSimilarity <- function(data, nodeIds, edgeList) {
 
 makePngs <- function(dataset, circuitType, circuits, fullEdgeList) {
   if(length(circuits) == 0) {return()}
-  system(paste("mkdir ", "circuits/", dataset, "_", circuitType, sep = ""))
+  system(paste("mkdir ", "circuits3/", dataset, "_", circuitType, sep = ""))
   if(ncol(fullEdgeList) == 3) {
     fullEdgeList$color <- group_indices(fullEdgeList, V3)
     numberOfColors <- max(fullEdgeList$color)
@@ -89,11 +89,12 @@ makePngs <- function(dataset, circuitType, circuits, fullEdgeList) {
     circuitNodes <- unlist(strsplit(circuits[i], split = "; "))
     circuitEdges <- fullEdgeList[fullEdgeList$V1 %in% circuitNodes & fullEdgeList$V2 %in% circuitNodes, ]
     circuitEdges[, 1:2] <- apply(circuitEdges[, 1:2], 2, toupper)
+    circuitEdges <- filter(circuitEdges, V1 != V2)
     
     network <- graph_from_data_frame(d = circuitEdges, vertices = toupper(circuitNodes), directed = T)
     V(network)$label.size <- 30
     
-    png(filename = paste("circuits/", dataset, "_", circuitType, "/", i, ".png", sep = ""),
+    png(filename = paste("circuits3/", dataset, "_", circuitType, "/", i, ".png", sep = ""),
         width = 640, height = 360)
     oldMargins<-par("mar")
     par(mar = c(0, 0, 0, 0))
@@ -148,8 +149,11 @@ checkCircuitRemovalCondition <- function(circuit_node_names, circuit, graph) {
 # 
 # circuit_FFF
 # circuit_JK
-# circuit <- circuit_AR
-# similarity_nodes <- c(4, 5, 2, 3)
+# circuit <- matrix(
+# data = c(0, 0, 0,
+#          1, 0, 0,
+#          1, 1, 0), ncol = 3)
+# similarity_nodes <- c(1, 2)
 # name <- "FFF"
 findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList, pvalues) {
   # returns number of circuits found and writes circuits to files
@@ -165,10 +169,10 @@ findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList,
   duplicationTable <- sapply(circuits$Nodes, function(x) arrangeLine(x))
   circuits <- circuits[!duplicated(duplicationTable), ]
   
-  if(length(circuits) != 0) {
-    exactCircuits <- foreach(i = 1:length(circuits), .combine = c) %do% {checkCircuitRemovalCondition(circuits[i], circuit, graph)}
-    circuits <- circuits[exactCircuits]
-  }
+  # if(length(circuits) != 0) {
+  #   exactCircuits <- foreach(i = 1:length(circuits), .combine = c) %do% {checkCircuitRemovalCondition(circuits[i], circuit, graph)}
+  #   circuits <- circuits[exactCircuits]
+  # }
   
   circuits <- as.data.frame(circuits, stringsAsFactors = F)
   colnames(circuits) <- "Nodes"
@@ -178,7 +182,7 @@ findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList,
   
   if(length(circuits) != 0 & !pvalues) {
     write(unlist(unite(circuits, Output, sep = "\t")),
-          paste("circuits/", dataset, "_", name, ".txt", sep = ""))
+          paste("circuits3/", dataset, "_", name, ".txt", sep = ""))
   }
   
   if(!pvalues) {
@@ -191,11 +195,13 @@ findCircuits <- function(circuit, similarity_nodes, name, dataset, fullEdgeList,
 ########## End of functions, beginning of script ##########
 ###########################################################
 
-networkDirectory <- "/home/ian/Dropbox/groupoid_finding_codes/naturePhysRuns/automaticRunData"
+networkDirectory <- "~/Dropbox/groupoid_finding_codes/naturePhysRuns/automaticRunData"
 #"/home/ian/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN/cleanedData"
 files <- list.files(networkDirectory, full.names = T)
 
-fileNames <- "modelSample"
+fileNames <- "YTRP_TF_gene_binding"
+  #"combinedKEGG"
+  #"yeast_network_tf"
   "Regulations_in_ATRM
 regulations_bacilus_cleaned
 Ecoli
@@ -204,43 +210,44 @@ trrust_rawdata.human
 Micobacterium_tuberculosis
 trrust_rawdata.mouse
 salmonella_Typhi_SL1344_RN
-SGD_full_yeast_TF-G
+#SGD_full_yeast_TF-G
+YTRP_TF_gene_regulatory
 YTRP_TF_gene_regulatory"
 
 fileNames <- unlist(strsplit(fileNames, split = "\n"))
 idxs <- foreach(i = 1:length(fileNames), .combine = c) %do% {grep(paste("/", fileNames[i], sep = ""), files)}
-idxs <- idxs[!grepl("KEGG", files[idxs])]
+#idxs <- idxs[!grepl("KEGG", files[idxs])]
 
 workingDirectory <- "~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN"
 setwd(workingDirectory)
-pvalues = T
+pvalues = F
 
 # loop over all files
-myCluster <- makeCluster(detectCores() - 3, outfile = "")
-registerDoParallel(myCluster)
-pb <- txtProgressBar(min(idxs), max(idxs), style = 3)
-start.time <- Sys.time()
-
+# myCluster <- makeCluster(detectCores() - 3, outfile = "")
+# registerDoParallel(myCluster)
+# pb <- txtProgressBar(min(idxs), max(idxs), style = 3)
+# start.time <- Sys.time()
+# 
 summary <- foreach(idx = idxs, .combine = rbind, .errorhandling = "remove") %do% {
   # setTxtProgressBar(pb, idx)
-  
+
   library(tidyr, quietly = T)
   library(dplyr, quietly = T)
   library(stringr, quietly = T)
   library(foreach, quietly = T)
   library(igraph, quietly = T)
-  
-  #print(files[idx])
+
+  print(files[idx])
   dataset <- gsub(".*/", "", files[idx])
   dataset <- gsub("\\.txt", "", dataset)
-  
+
   fullEdgeList <- read.table(files[idx], stringsAsFactors = F)
-  
+
   circuit_AR <- matrix(
     data = c(0, 1,
              1, 0), ncol = 2)
   circuit_count_AR <- findCircuits(circuit_AR, c(1, 2), "AR", dataset, fullEdgeList, pvalues)
-  
+
   circuit_FFF <- matrix(
     data = c(0, 0, 0, 0, 0,
              1, 0, 0, 0, 0,
@@ -256,27 +263,201 @@ summary <- foreach(idx = idxs, .combine = rbind, .errorhandling = "remove") %do%
   #            0, 1, 0, 0, 1,
   #            0, 0, 1, 1, 0), ncol = 5)
   # circuit_count_JK <- findCircuits(circuit_JK, c(4, 5, 2, 3), "Fibonacci", dataset, fullEdgeList, pvalues)
-  
+
   circuit_JK_no_clock <- matrix(
     data = c(0, 0, 0, 1,
              0, 0, 1, 0,
              1, 0, 0, 1,
              0, 1, 1, 0), ncol = 4)
   circuit_count_JK <- findCircuits(circuit_JK_no_clock, c(3, 4, 1, 2), "JK_no_clock", dataset, fullEdgeList, pvalues)
-  
+
   # write data to files as a backup in case code bugs
-  if(pvalues == T) {
-    write(paste(dataset, circuit_count_AR, circuit_count_FFF, circuit_count_JK, sep = ";"),
-          "~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN/pvalue_runs_summary.txt",
-          append = T)
-  }
-  
+  # if(pvalues == T) {
+  #   write(paste(dataset, circuit_count_AR, circuit_count_FFF, circuit_count_JK, sep = ";"),
+  #         "~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN/pvalue_runs_summary.txt",
+  #         append = T)
+  # }
+
   c(dataset, circuit_count_AR, circuit_count_FFF, circuit_count_JK)
 }
+
+# summary <- foreach(idx = idxs, .combine = c, .errorhandling = "remove") %do% {
+#   fullEdgeList <- read.table(files[idx], stringsAsFactors = F)
+#   edgeList <- fullEdgeList %>%
+#     filter(V1 != V2)
+#   edgeList <- edgeList[!duplicated(edgeList[, c(1, 2)]), ]
+#   graph <- graph.data.frame(edgeList)
+#   circuit <- matrix(
+#     data = c(0, 0, 0,
+#              1, 0, 0,
+#              1, 1, 0), ncol = 3)
+#   circuits <- getCircuits(circuit, graph)
+#   candidates <- gsub("^[^;]*; ([^;]*); [^;]*", "\\1", circuits$Nodes)
+#   
+#   truetable <- foreach(i = 1:length(candidates), .combine = c) %do% {nrow(fullEdgeList[fullEdgeList$V1 == candidates[i] & fullEdgeList$V2 == candidates[i], ]) == 0}
+#   length(candidates[truetable]) / length(candidates)
+# }
+# mean(summary)
+# library(tidyr, quietly = T)
+# library(dplyr, quietly = T)
+# library(stringr, quietly = T)
+# library(foreach, quietly = T)
+# library(igraph, quietly = T)
+# 
+# idx = idxs
+# dataset <- gsub(".*/", "", files[idx])
+# dataset <- gsub("\\.txt", "", dataset)
+# 
+# fullEdgeList <- read.table(files[idx], stringsAsFactors = F)
+# fullEdgeList <- fullEdgeList %>%
+#   filter(V1 != V2)
+# fullEdgeList <- fullEdgeList[!duplicated(fullEdgeList), ]
+# 
+# network <- graph_from_edgelist(as.matrix(fullEdgeList[, 1:2]), directed = TRUE)
+# nodes <- components(network, mode = "strong")$membership
+# nodes <- as.data.frame(nodes)
+# numberOfSCC <- max(nodes$nodes)
+# nodes$names <- row.names(nodes)
+# nodes <- nodes %>%
+#   group_by(nodes) %>%
+#   mutate(sccSize = n()) %>%
+#   filter(sccSize > 1)
+# 
+# network <- induced_subgraph(network, nodes$names, impl = "auto")
+# SCCEdgeList <- as.data.frame(as_edgelist(network, names = TRUE), stringsAsFactors = F)
+# 
+# write.csv(SCCEdgeList, "~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN/circuits/gephi.csv", row.names = F, quote = F)
+# write.csv(nodes[, 1:2], "~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN/circuits/gephi_nodes.csv", row.names = F, quote = F)
+# 
+# circuit <- matrix(
+#   data = c(0, 1,
+#            1, 0), ncol = 2)
+# # circuit_FFF <- matrix(
+# #   data = c(0, 0, 0, 0, 0,
+# #            1, 0, 0, 0, 0,
+# #            1, 0, 0, 0, 0,
+# #            0, 1, 0, 0, 1,
+# #            0, 0, 1, 1, 0), ncol = 5)
+# circuit_FFF <- matrix(
+#   data = c(0, 0, 0, 0,
+#            0, 0, 0, 0,
+#            1, 0, 0, 1,
+#            0, 1, 1, 0), ncol = 4)
+# circuit_JK_no_clock <- matrix(
+#   data = c(0, 0, 0, 1,
+#            0, 0, 1, 0,
+#            1, 0, 0, 1,
+#            0, 1, 1, 0), ncol = 4)
+# 
+# nodes <- unique(c(SCCEdgeList$V1, SCCEdgeList$V2))
+# edgeList <- SCCEdgeList %>%
+#   filter(V1 != V2)
+# edgeList <- edgeList[!duplicated(edgeList[, c(1, 2)]), ]
+# graph <- graph.data.frame(edgeList)
+# 
+# circuits <- getCircuits(circuit, graph)
+# 
+# duplicationTable <- sapply(circuits$Nodes, function(x) arrangeLine(x))
+# circuits <- as.data.frame(circuits[!duplicated(duplicationTable), ])
+# colnames(circuits)[1] <- "Nodes"
+# 
+# circuits <- circuits %>%
+#   separate(col = Nodes, into = c("X", "Xp"), sep = "; ")
+# 
+# circuits_FFF_unconfirmed <- NULL
+# start.time <- Sys.time()
+# #for(i in sample(1:nrow(circuits), 10)) {
+# for(i in 1:10) {
+#   allowedEdges <- fullEdgeList$V1 != circuits$Xp[i] & fullEdgeList$V1 != circuits$X[i]
+# 
+#   possibleY <- fullEdgeList$V1[ fullEdgeList$V2 == circuits$X[i]  & allowedEdges]
+#   possibleYp <- fullEdgeList$V1[fullEdgeList$V2 == circuits$Xp[i] & allowedEdges]
+# 
+#   if(length(possibleY) == 0 | length(possibleYp) == 0) {next}
+#   for(j in 1:length(possibleY)) {
+#     for(k in 1:length(possibleYp)) {
+#       if(possibleY[j] == possibleYp[k]) {next}
+#       circuits_FFF_unconfirmed <- c(circuits_FFF_unconfirmed, paste(paste(possibleY[j], possibleYp[k], circuits$X[i], circuits$Xp[i], sep = "; "), sep = "; "))
+#       # possibleClock <-  fullEdgeList$V1[fullEdgeList$V2 == possibleY[j]  & allowedEdges]
+#       # possibleClockP <- fullEdgeList$V1[fullEdgeList$V2 == possibleYp[k] & allowedEdges]
+#       # possibleClock <- possibleClock[possibleClock %in% possibleClockP]
+#       # if(length(possibleClock) != 0) {
+#       #   circuits_FFF_unconfirmed <- c(circuits_FFF_unconfirmed, paste(possibleClock, paste(possibleY[j], possibleYp[k], circuits$X[i], circuits$Xp[i], sep = "; "), sep = "; "))
+#       # }
+#     }
+#   }
+# }
+# now.time <- Sys.time()
+# time.taken <- now.time - start.time
+# print(time.taken)
+# 
+# circuits_FFF_unconfirmed_sample <- circuits_FFF_unconfirmed[sample(1:length(circuits_FFF_unconfirmed), 100)]
+# 
+# exactCircuits <- foreach(i = 1:length(circuits_FFF_unconfirmed_sample), .combine = c) %do% {checkCircuitRemovalCondition(circuits_FFF_unconfirmed_sample[i], circuit_FFF, graph)}
+# 
+# circuits_JK_unconfirmed <- NULL
+# start.time <- Sys.time()
+# #for(i in sample(1:nrow(circuits), 10)) {
+# for(i in 1:nrow(circuits)) {
+#   allowedEdges <- fullEdgeList$V1 != circuits$Xp[i] & fullEdgeList$V1 != circuits$X[i]
+#   
+#   # Y block
+#   possibleY <- fullEdgeList$V1[fullEdgeList$V2 == circuits$X[i] & allowedEdges]
+#   possibleY <- fullEdgeList$V2[fullEdgeList$V1 == circuits$Xp[i] & fullEdgeList$V2 %in% possibleY]
+#   
+#   # if(length(possibleY) == 0) {next}
+#   # # check if any of them send to X prime
+#   # possibleYTrue <- foreach(j = 1:length(possibleY), .combine = c) %do% {nrow(fullEdgeList[fullEdgeList$V1 == possibleY[j] & fullEdgeList$V2 == circuits$Xp[i], ]) == 0}
+#   # possibleY <- possibleY[possibleYTrue]
+#   # 
+#   # if(length(possibleY) == 0) {next}
+#   # # check if any of them receive from X
+#   # possibleYTrue <- foreach(j = 1:length(possibleY), .combine = c) %do% {nrow(fullEdgeList[fullEdgeList$V1 == circuits$X[i] & fullEdgeList$V2 == possibleY[j], ]) == 0}
+#   # possibleY <- possibleY[possibleYTrue]
+#   
+#   
+#   # Y prime block
+#   possibleYp <- fullEdgeList$V1[fullEdgeList$V2 == circuits$Xp[i] & allowedEdges]
+#   possibleYp <- fullEdgeList$V2[fullEdgeList$V1 == circuits$X[i] & fullEdgeList$V2 %in% possibleYp]
+#   
+#   # if(length(possibleYp) == 0) {next}
+#   # # check if any of them send to X
+#   # possibleYpTrue <- foreach(j = 1:length(possibleYp), .combine = c) %do% {nrow(fullEdgeList[fullEdgeList$V1 == possibleYp[j] & fullEdgeList$V2 == circuits$X[i], ]) == 0}
+#   # possibleYp <- possibleYp[possibleYpTrue]
+#   # 
+#   # if(length(possibleYp) == 0) {next}
+#   # # check if any of them receive from X prime
+#   # possibleYpTrue <- foreach(j = 1:length(possibleYp), .combine = c) %do% {nrow(fullEdgeList[fullEdgeList$V1 == circuits$Xp[i] & fullEdgeList$V2 == possibleYp[j], ]) == 0}
+#   # possibleYp <- possibleYp[possibleYpTrue]
+#   
+#   
+#   if(length(possibleY) == 0 | length(possibleYp) == 0) {next}
+#   else {
+#     for(j in 1:length(possibleY)) {
+#       for(k in 1:length(possibleYp)) {
+#         if(possibleY[j] == possibleYp[k]) {next}
+#         # if(nrow(fullEdgeList[fullEdgeList$V1 == possibleY[j] & fullEdgeList$V2 == possibleYp[k],]) != 0) {next}
+#         # if(nrow(fullEdgeList[fullEdgeList$V1 == possibleYp[k] & fullEdgeList$V2 == possibleY[j],]) != 0) {next}
+#         newCircuits <- paste(possibleY[j], possibleYp[k], circuits$X[i], circuits$Xp[i], sep = "; ")
+#         circuits_JK_unconfirmed <- c(circuits_JK_unconfirmed, newCircuits)
+#       }
+#     }
+#   }
+# }
+# 
+# #circuits_JK_unconfirmed_sample <- circuits_JK_unconfirmed[sample(1:length(circuits_JK_unconfirmed), 100)]
+# exactCircuits <- foreach(i = 1:length(circuits_JK_unconfirmed), .combine = c) %do% {checkCircuitRemovalCondition(circuits_JK_unconfirmed[i], circuit_JK_no_clock, graph)}
+# circuits_JK_confirmed <- as.data.frame(circuits_JK_unconfirmed[exactCircuits], stringsAsFactors = F)
+# 
 now.time <- Sys.time()
-stopCluster(myCluster)
 time.taken <- now.time - start.time
 print(time.taken)
+# 
+# 
+# circuit_count_JK <- findCircuits(circuit_JK_no_clock, c(3, 4, 1, 2), "JK_no_clock", dataset, fullEdgeList, pvalues)
+
+
+
 
 summary <- as.data.frame(summary, stringsAsFactors = F)
 colnames(summary) <- c("Dataset", "AR", "FFF", "JK")
@@ -313,62 +494,73 @@ getDatasetByPrefix <- function(prefix) {
   prefix <- gsub("Micobacterium_tuberculosis",     "Micobacterium tuberculosis", prefix)
   prefix <- gsub("salmonella_Typhi_SL1344_RN",     "Salmonella SL1344", prefix)
   prefix <- gsub("SGD_full_yeast_TF-G",            "Yeast SGD", prefix)
-  prefix <- gsub("YTRP_TF_gene_regulatory",        "Yeast YTRP", prefix)
+  prefix <- gsub("YTRP_TF_gene_regulatory",        "Yeast YTRP regulatory", prefix)
+  prefix <- gsub("YTRP_TF_gene_binding",           "Yeast YTRP binding", prefix)
   prefix <- gsub("trrust_rawdata.mouse",           "Mouse TRRUST", prefix)
   prefix <- gsub("trrust_rawdata.human",           "Human TRRUST2", prefix)
   prefix <- gsub("human_network_tf_gene_weighted", "Human TRRUST", prefix)
   prefix <- gsub("combinedKEGG",                   "Human KEGG", prefix)
   return(prefix)
 }
-
+#
+getTypeName <- function(type) {
+  type <- gsub("AR",        "SR flip-flop", type)
+  type <- gsub("FFF",       "Clocked SR flip-flop", type)
+  type <- gsub("Fibonacci", "Clocked JK flip-flop", type)
+  return(type)
+}
+#
 # here we do pdfs
-
+#
 structuresPath <- "~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN/"
 setwd(structuresPath)
-circuitDirectories <- list.dirs(paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN/circuits/"), full.names = T)
+circuitDirectories <- list.dirs(paste("~/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN/circuits3/"), full.names = T)
 circuitDirectories <- circuitDirectories[-1]
 circuitDirectories <- as.data.frame(circuitDirectories, stringsAsFactors = F)
-
+#
 circuitDirectories$Dataset <- gsub(".*//(.*)_[[:alpha:]]*$", "\\1", circuitDirectories$circuitDirectories)
 #circuitDirectories <- circuitDirectories[!grepl("human_network_tf_gene_weighted", circuitDirectories$circuitDirectories), ]
 #circuitDirectories <- circuitDirectories[foreach(i = 1:length(fileNames), .combine = c) %do% {grep(paste(fileNames[i], sep = ""), circuitDirectories$Dataset)}, ]
-
+#
 samplePNGs = T
 # there is roughly 4 times more asymm circuits than symm, so we sample to get equal amount of both types in structures
-asymmProportionToSample = 0.15
-symmProportionToSample = 0.6
 
+proportionToSample = 10/68.4 / 3
+asymmProportionToSample = (proportionToSample / 5) ^ (1/2)
+symmProportionToSample = asymmProportionToSample * 4
+#
 texFileName <- "structures.tex"
-
+#
 write("\\documentclass[preprint,aps,preprintnumbers,amsmath,amssymb]{revtex4}
 
 \\usepackage[]{graphicx}
 
 \\begin{document}", texFileName)
-
+#
 # first we get all asymmetric circuits
-
+#
 foreach(dataset = unique(circuitDirectories$Dataset), .combine = c) %do% {
   directoriesToCheck <- circuitDirectories %>%
     filter(Dataset == dataset)
-
-  AR_circuits <- try(read.table(paste("circuits/", dataset, "_AR.txt", sep = ""), sep = "\t", stringsAsFactors = F))
-  FFF_circuits <- try(read.table(paste("circuits/", dataset, "_FFF.txt", sep = ""), sep = "\t", stringsAsFactors = F))
-  Fibonacci_circuits <- try(read.table(paste("circuits/", dataset, "_Fibonacci.txt", sep = ""), sep = "\t", stringsAsFactors = F))
-
+#
+  AR_circuits <- try(read.table(paste("circuits3/", dataset, "_AR.txt", sep = ""), sep = "\t", stringsAsFactors = F))
+  FFF_circuits <- try(read.table(paste("circuits3/", dataset, "_FFF.txt", sep = ""), sep = "\t", stringsAsFactors = F))
+  Fibonacci_circuits <- try(read.table(paste("circuits3/", dataset, "_Fibonacci.txt", sep = ""), sep = "\t", stringsAsFactors = F))
+#
   dataset <- getDatasetByPrefix(dataset)
-
+#
   pngFileNames <- foreach(i = 1:nrow(directoriesToCheck), .combine = c) %do% {
     paste(directoriesToCheck$circuitDirectories[i], list.files(directoriesToCheck$circuitDirectories[i]), sep = "/")
   }
-
+#
   if(samplePNGs) {
     fibonacciPNG <- pngFileNames[grepl("Fibonacci", pngFileNames)]
     otherPNG <- pngFileNames[!grepl("Fibonacci", pngFileNames)]
     otherPNG <- otherPNG[sample(1:length(otherPNG), as.integer(length(pngFileNames) * asymmProportionToSample))]
     pngFileNames <- c(otherPNG, fibonacciPNG)
   }
-
+#
+  if(length(pngFileNames) == 0) {return()}
   for(i in 1:length(pngFileNames)) {
     type <- gsub(".*_([[:alpha:]]*)/[0-9]*.png$", "\\1", pngFileNames[i])
     idx <- as.integer(gsub(".*/([0-9]*).png$", "\\1", pngFileNames[i]))
@@ -379,9 +571,10 @@ foreach(dataset = unique(circuitDirectories$Dataset), .combine = c) %do% {
     if(type == "Fibonacci")
       nodes <- toupper(Fibonacci_circuits$V1[idx])
     nodes <- gsub("_", "\\\\_", nodes)
-    
+#
     write(paste("\\clearpage ", dataset, " \\\\ ",
-                paste(type, "Broken"),
+                #paste(type, "Broken"),
+                getTypeName(type),
                 " \\\\ ", nodes, " \\\\", sep = ""),
           file = texFileName, append = T)
     write(paste("\\includegraphics[width=\\textwidth, height=100in, keepaspectratio]{",
@@ -390,17 +583,18 @@ foreach(dataset = unique(circuitDirectories$Dataset), .combine = c) %do% {
           file = texFileName, append = T)
   }
 }
+#
 
 # now we get all symmetric circuits
 writeToStructures <- function(prefix, type, subblocks, structuresPath, symmStructuresPath, texFileName, samplePNGs, proportionToSample) {
   if(nrow(subblocks) == 0) {return()}
   subblocks <- subblocks[str_count(subblocks$Regulators, ",") < 50, ]
-  
+#
   idxs = 1:nrow(subblocks)
   if(samplePNGs) {
     idxs <- sample(1:nrow(subblocks), as.integer(nrow(subblocks) * proportionToSample))
   }
-  
+#
   for(i in idxs) {
     write(paste("\\clearpage ", getDatasetByPrefix(prefix), " \\\\ ",
                 type, " \\\\ ",
@@ -414,39 +608,39 @@ writeToStructures <- function(prefix, type, subblocks, structuresPath, symmStruc
           file = paste(structuresPath, texFileName, sep = ""), append = T)
   }
 }
-
+#
 symmStructuresPath <- "/home/ian/Dropbox/groupoid_finding_codes/naturePhysRuns/automaticRunData"
 source("~/Dropbox/groupoid_finding_codes/fibers/R/classifier.R")
-
+#
 prefixes <- c(unique(circuitDirectories$Dataset), "combinedKEGG")
-
+#
 for(prefix in prefixes) {
   if(prefix == "combinedKEGG") {
     blocks <- read.csv("/home/ian/Dropbox/Research/PhD work/shared folders/MARIANO-SERIES/TRANSISTOR/IAN/blocks.txt", sep = "\t", header = T)
   } else {
     blocks <- getBlocks(paste(symmStructuresPath, "/output/", prefix, sep = ""))
   }
-
+#
   ARBlocks <- blocks[grepl("(Chain|Chain-Star|Synchronized Star Fiber|Repression Chain)", blocks$Class), ]
   FFFBlocks <- blocks[grepl("(Feed-Forward Fiber|UNSAT Feed-Forward Fiber)", blocks$Class), ]
   FibonacciBlocks <- blocks[grepl("(Feedback Fiber|Fibonacci n = 1)", blocks$Class), ]
   n2Blocks <- blocks[grepl("(n > 1|Negative n = 2|Unclassified)", blocks$Class), ]
-
+#
   writeToStructures(prefix, "AR", ARBlocks, structuresPath, symmStructuresPath, texFileName, samplePNGs, symmProportionToSample)
   writeToStructures(prefix, "FFF", FFFBlocks, structuresPath, symmStructuresPath, texFileName, samplePNGs, symmProportionToSample)
   writeToStructures(prefix, "Fibonacci", FibonacciBlocks, structuresPath, symmStructuresPath, texFileName, samplePNGs, symmProportionToSample)
   writeToStructures(prefix, "n = 2", n2Blocks, structuresPath, symmStructuresPath, texFileName, F, 1)
 }
-
+#
 write("\\end{document}", texFileName, append = T)
-
+#
 system(paste("pdflatex ", texFileName))
 
-# system(paste("mv ",
-#              gsub(".tex", ".pdf", texFileName),
-#              " SM.pdf",
-#              gsub("[^/]*.tex", paste(dataset, ".pdf", sep = ""), texFileName),
-#              sep = ""))
+system(paste("mv ",
+             gsub(".tex", ".pdf", texFileName),
+             " SM.pdf",
+             gsub("[^/]*.tex", paste(dataset, ".pdf", sep = ""), texFileName),
+             sep = ""))
 
 
 
